@@ -4,12 +4,15 @@ import {
   Paper, 
   Typography, 
   Box, 
-  CircularProgress 
+  CircularProgress,
+  Alert,
+  Snackbar 
 } from '@mui/material';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import PlaylistItem from './PlaylistItem';
 import { PlaylistItem as PlaylistItemType } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { initializePlaylistTable, validatePlaylistData } from '@/utils/db';
 
 /**
  * PlaylistProps
@@ -30,28 +33,19 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
   const [items, setItems] = useState<PlaylistItemType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
 
   // 플레이리스트 로드
   useEffect(() => {
     const fetchPlaylist = async () => {
       try {
         setLoading(true);
-        console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
         
-        // Supabase 연결 확인
-        const { data: tableExists } = await supabase
-          .from('_supabase_tables')
-          .select('*')
-          .eq('name', 'playlist')
-          .maybeSingle();
-        
-        // playlist 테이블이 없는 경우 빈 배열 반환
-        if (!tableExists) {
-          console.log('playlist 테이블이 존재하지 않습니다. 빈 플레이리스트를 표시합니다.');
-          setItems([]);
-          setLoading(false);
-          return;
-        }
+        // 테이블 초기화 시도
+        await initializePlaylistTable().catch(err => {
+          console.log('테이블 초기화 건너뜀:', err);
+        });
         
         const { data, error } = await supabase
           .from('playlist')
@@ -78,7 +72,15 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
           throw error;
         }
         
-        setItems(data || []);
+        // 데이터 유효성 검사
+        if (validatePlaylistData(data)) {
+          setItems(data || []);
+        } else {
+          console.warn('부적절한 데이터 형식:', data);
+          setItems([]);
+          setSnackbarMessage('플레이리스트 데이터 형식이 올바르지 않습니다.');
+          setSnackbarOpen(true);
+        }
       } catch (err) {
         // 에러 객체를 문자열로 변환하여 더 자세한 정보 출력
         const errorMessage = err instanceof Error 
@@ -190,47 +192,64 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
   }
 
   return (
-    <Paper 
-      elevation={3} 
-      sx={{ 
-        maxHeight: 'calc(100vh - 300px)', 
-        overflow: 'auto',
-        bgcolor: 'background.paper',
-        borderRadius: 2
-      }}
-    >
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <Droppable droppableId="playlist">
-          {(provided) => (
-            <List 
-              {...provided.droppableProps}
-              ref={provided.innerRef}
-              sx={{ p: 2 }}
-            >
-              {items.map((item, index) => (
-                <Draggable key={item.id} draggableId={item.id} index={index}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.draggableProps}
-                      {...provided.dragHandleProps}
-                    >
-                      <PlaylistItem
-                        item={item}
-                        isCurrentlyPlaying={index === currentPlayingIndex}
-                        onDelete={handleDelete}
-                        isDragging={snapshot.isDragging}
-                      />
-                    </div>
-                  )}
-                </Draggable>
-              ))}
-              {provided.placeholder}
-            </List>
-          )}
-        </Droppable>
-      </DragDropContext>
-    </Paper>
+    <>
+      <Paper 
+        elevation={3} 
+        sx={{ 
+          maxHeight: 'calc(100vh - 300px)', 
+          overflow: 'auto',
+          bgcolor: 'background.paper',
+          borderRadius: 2
+        }}
+      >
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="playlist">
+            {(provided) => (
+              <List 
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                sx={{ p: 2 }}
+              >
+                {items.map((item, index) => (
+                  <Draggable key={item.id} draggableId={item.id} index={index}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                      >
+                        <PlaylistItem
+                          item={item}
+                          isCurrentlyPlaying={index === currentPlayingIndex}
+                          onDelete={handleDelete}
+                          isDragging={snapshot.isDragging}
+                        />
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </List>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </Paper>
+      
+      {/* 에러 메시지 스낵바 */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={() => setSnackbarOpen(false)}
+      >
+        <Alert 
+          onClose={() => setSnackbarOpen(false)} 
+          severity="error" 
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </>
   );
 };
 
