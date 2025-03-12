@@ -38,6 +38,21 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
         setLoading(true);
         console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
         
+        // Supabase 연결 확인
+        const { data: tableExists } = await supabase
+          .from('_supabase_tables')
+          .select('*')
+          .eq('name', 'playlist')
+          .maybeSingle();
+        
+        // playlist 테이블이 없는 경우 빈 배열 반환
+        if (!tableExists) {
+          console.log('playlist 테이블이 존재하지 않습니다. 빈 플레이리스트를 표시합니다.');
+          setItems([]);
+          setLoading(false);
+          return;
+        }
+        
         const { data, error } = await supabase
           .from('playlist')
           .select('*')
@@ -52,6 +67,14 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
               hint: error.hint
             }, null, 2)
           );
+          
+          // "테이블이 존재하지 않음" 오류인 경우 빈 배열로 설정
+          if (error.code === '42P01') {
+            console.log('playlist 테이블이 없습니다. 빈 플레이리스트를 표시합니다.');
+            setItems([]);
+            return;
+          }
+          
           throw error;
         }
         
@@ -65,6 +88,8 @@ const Playlist: React.FC<PlaylistProps> = ({ currentPlayingIndex, onReorder }) =
         console.error('플레이리스트 로드 오류:', errorMessage);
         console.error('에러 스택:', err instanceof Error ? err.stack : '스택 정보 없음');
         
+        // 에러가 발생해도 빈 배열로 설정하여 UI가 크래시 나지 않도록 함
+        setItems([]);
         setError(`플레이리스트를 불러오는데 실패했습니다. (${errorMessage})`);
       } finally {
         setLoading(false);
