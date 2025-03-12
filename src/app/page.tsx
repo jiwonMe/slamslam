@@ -30,6 +30,7 @@ import Playlist from '@/components/Playlist';
 import YouTubePlayer from '@/components/YouTubePlayer';
 import { PlaylistItem } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { setupPlaylistRealtime } from '@/lib/supabase';
 
 export default function Home() {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -58,26 +59,47 @@ export default function Home() {
 
     fetchPlaylist();
 
-    // 실시간 업데이트 구독
-    const channel = supabase
-      .channel('playlist-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'playlist' }, 
-        () => fetchPlaylist()
-      )
-      .subscribe();
+    // 실시간 업데이트 구독 - 메인 페이지에서는 현재 재생 중인 항목 관리를 위해 필요
+    const channel = setupPlaylistRealtime({
+      onInsert: (newItem) => {
+        setPlaylist(prev => {
+          const updatedItems = [...prev, newItem];
+          updatedItems.sort((a, b) => a.addedAt - b.addedAt);
+          return updatedItems;
+        });
+      },
+      onUpdate: (updatedItem) => {
+        setPlaylist(prev => 
+          prev.map(item => item.id === updatedItem.id ? updatedItem : item)
+        );
+      },
+      onDelete: (deletedItem) => {
+        setPlaylist(prev => {
+          const updatedItems = prev.filter(item => item.id !== deletedItem.id);
+          
+          // 현재 재생 중인 항목이 삭제된 경우 인덱스 조정
+          if (currentIndex >= updatedItems.length && updatedItems.length > 0) {
+            setCurrentIndex(0);
+          }
+          
+          return updatedItems;
+        });
+      }
+    });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [currentIndex]);
 
   /**
    * 비디오 추가 핸들러
    */
   const handleAddVideo = async (url: string, name: string) => {
     try {
-      const { error } = await fetch('/api/playlist', {
+      console.log('비디오 추가 요청 시작:', url);
+      
+      const response = await fetch('/api/playlist', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -86,12 +108,43 @@ export default function Home() {
           url, 
           addedBy: name || '익명' 
         })
-      }).then(res => {
-        if (!res.ok) throw new Error('비디오 추가 실패');
-        return res.json();
       });
-
-      if (error) throw new Error(error);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('비디오 추가 API 오류:', errorData);
+        throw new Error(errorData.error || '비디오 추가 실패');
+      }
+      
+      const data = await response.json();
+      console.log('비디오 추가 성공:', data);
+      
+      // 실시간 이벤트가 작동하지 않을 경우를 대비한 폴백 처리
+      // 새로 추가된 항목을 플레이리스트에 직접 추가
+      if (data && data.id) {
+        const newItem = data as PlaylistItem;
+        
+        // 중복 방지를 위해 이미 있는지 확인
+        if (!playlist.some(item => item.id === newItem.id)) {
+          console.log('폴백: 플레이리스트에 새 항목 직접 추가');
+          
+          // 새 항목 추가 및 정렬
+          const updatedPlaylist = [...playlist, newItem].sort((a, b) => a.addedAt - b.addedAt);
+          setPlaylist(updatedPlaylist);
+        }
+      }
+      
+      // 알림 전송
+      try {
+        await fetch('https://ntfy.sh/miridih-jwpark02-cursor-250228', {
+          method: 'POST',
+          body: `새 노래가 추가됨: ${data.title || url}`,
+        });
+      } catch (err) {
+        console.error('알림 전송 실패:', err);
+      }
+      
+      return data;
     } catch (err) {
       console.error('비디오 추가 오류:', err);
       throw err;

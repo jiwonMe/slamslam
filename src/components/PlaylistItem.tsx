@@ -80,6 +80,7 @@ const PlaylistItem: React.FC<PlaylistItemProps> = ({
         primary={
           <Typography
             variant="body1"
+            component="span"
             sx={{
               fontWeight: isCurrentlyPlaying ? 'bold' : 'normal',
               color: isCurrentlyPlaying ? 'primary.main' : 'text.primary',
@@ -89,14 +90,24 @@ const PlaylistItem: React.FC<PlaylistItemProps> = ({
           </Typography>
         }
         secondary={
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              {item.addedBy}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {item.duration}
-            </Typography>
-          </Box>
+          <React.Fragment>
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                mt: 0.5,
+                alignItems: 'center'
+              }}
+              component="span"
+            >
+              <Typography variant="body2" color="text.secondary" component="span">
+                {item.addedBy}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" component="span">
+                {item.duration}
+              </Typography>
+            </Box>
+          </React.Fragment>
         }
       />
     </ListItem>

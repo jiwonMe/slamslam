@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { PlaylistItem } from '@/types';
-import { getYouTubeVideoInfo, extractYouTubeId } from '@/utils/youtube';
+import { getYouTubeVideoInfo, extractYouTubeId, formatDuration } from '@/utils/youtube';
 
 /**
  * 플레이리스트 가져오기
@@ -51,8 +51,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // YouTube 정보 가져오기
-    const videoInfo = await getYouTubeVideoInfo(videoId);
+    // 서버 컨텍스트에서는 직접 YouTube API 호출
+    let videoInfo;
+    try {
+      // YouTube API 키는 환경 변수에서 가져옵니다
+      const API_KEY = process.env.YOUTUBE_API_KEY;
+      
+      if (!API_KEY) {
+        throw new Error('YouTube API 키가 설정되지 않았습니다');
+      }
+      
+      // YouTube Data API v3 직접 호출
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`YouTube API 호출 실패: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // 비디오가 존재하지 않는 경우
+      if (!data.items || data.items.length === 0) {
+        throw new Error('비디오를 찾을 수 없습니다');
+      }
+
+      const videoData = data.items[0];
+      const { snippet, contentDetails } = videoData;
+
+      // 필요한 정보만 추출
+      videoInfo = {
+        title: snippet.title,
+        thumbnail: snippet.thumbnails.medium.url, // 중간 크기 썸네일 사용
+        duration: formatDuration(contentDetails.duration)
+      };
+    } catch (error) {
+      console.error('YouTube API 직접 호출 오류:', error);
+      // 오류 발생 시 기본 정보 사용
+      videoInfo = {
+        title: '비디오 정보를 가져올 수 없습니다',
+        thumbnail: '/placeholder-thumbnail.jpg',
+        duration: '0:00'
+      };
+    }
 
     // 새 플레이리스트 항목 생성
     const newItem: Omit<PlaylistItem, 'id'> = {
