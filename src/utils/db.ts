@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { PlaylistItem } from '@/types';
 
 /**
  * initializePlaylistTable
@@ -62,16 +63,25 @@ const createPlaylistTable = async (): Promise<boolean> => {
  * @param data 검사할 데이터
  * @returns {boolean} 유효한 데이터인지 여부
  */
-export const validatePlaylistData = (data: any): boolean => {
+export const validatePlaylistData = (data: unknown): boolean => {
   if (!data || !Array.isArray(data)) {
     return false;
   }
   
+  // 타입 가드 함수로 PlaylistItem 배열 여부 확인
+  const isPlaylistItemArray = (arr: unknown[]): arr is PlaylistItem[] => {
+    return arr.every(item => 
+      typeof item === 'object' && 
+      item !== null && 
+      'id' in item && 
+      'title' in item && 
+      'url' in item
+    );
+  };
+  
   // 필수 필드 확인
-  for (const item of data) {
-    if (!item.id || !item.title || !item.url) {
-      return false;
-    }
+  if (!isPlaylistItemArray(data)) {
+    return false;
   }
   
   return true;
